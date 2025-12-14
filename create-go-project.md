@@ -220,6 +220,11 @@ export PORT="3000"
 export ENV="development"
 export LOG_LEVEL="DEBUG"
 
+# Site / SEO (used for meta tags, OG, etc.)
+export SITE_NAME="$ARGUMENTS"
+export SITE_URL="http://localhost:3000"
+export DEFAULT_OG_IMAGE="/static/images/og-default.png"
+
 # CLERK_SECRET_KEY and CLERK_PUBLISHABLE_KEY if Clerk selected
 # BREVO_API_KEY if Brevo selected
 # STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY, STRIPE_WEBHOOK_SECRET if Stripe selected
@@ -615,7 +620,7 @@ func main() {
     e.HideBanner = true
     e.HidePort = true
 
-    middleware.Setup(e, cfg.IsDevelopment())
+    middleware.Setup(e, cfg)
 
     h := handler.New(cfg, db)
     h.RegisterRoutes(e)
@@ -653,10 +658,17 @@ import (
     "os"
 )
 
+type SiteConfig struct {
+    Name           string
+    URL            string
+    DefaultOGImage string
+}
+
 type Config struct {
     DatabaseURL string
     Port        string
     Env         string
+    Site        SiteConfig
     // Add service keys based on selection:
     // ClerkSecretKey      string
     // ClerkPublishableKey string
@@ -671,6 +683,11 @@ func Load() *Config {
         DatabaseURL: os.Getenv("DATABASE_URL"),
         Port:        getEnvOrDefault("PORT", "3000"),
         Env:         getEnvOrDefault("ENV", "development"),
+        Site: SiteConfig{
+            Name:           getEnvOrDefault("SITE_NAME", "$ARGUMENTS"),
+            URL:            getEnvOrDefault("SITE_URL", "http://localhost:3000"),
+            DefaultOGImage: getEnvOrDefault("DEFAULT_OG_IMAGE", "/static/images/og-default.png"),
+        },
     }
 
     if cfg.DatabaseURL == "" {
@@ -697,9 +714,21 @@ func getEnvOrDefault(key, defaultValue string) string {
 }
 ```
 
-#### 13. internal/meta/meta.go
+#### 13. internal/ctxkeys/keys.go
 
-SEO and Open Graph metadata for pages:
+Typed context keys to prevent collision with other packages:
+
+```go
+package ctxkeys
+
+type siteConfigKey struct{}
+
+var SiteConfig = siteConfigKey{}
+```
+
+#### 14. internal/meta/meta.go
+
+SEO and Open Graph metadata (simple struct, no site name - that comes from context):
 
 ```go
 package meta
@@ -707,59 +736,72 @@ package meta
 type PageMeta struct {
     Title       string
     Description string
-    Keywords    []string
     OGType      string
     OGImage     string
-    OGImageAlt  string
-    TwitterCard string
     Canonical   string
     NoIndex     bool
-    SiteName    string
-    Locale      string
 }
 
-func New(title string) *PageMeta {
-    return &PageMeta{
+func New(title, description string) PageMeta {
+    return PageMeta{
         Title:       title,
+        Description: description,
         OGType:      "website",
-        TwitterCard: "summary_large_image",
-        Locale:      "en_US",
     }
 }
 
-func (m *PageMeta) WithDescription(desc string) *PageMeta {
-    m.Description = desc
-    return m
-}
-
-func (m *PageMeta) WithOGImage(url, alt string) *PageMeta {
+func (m PageMeta) WithOGImage(url string) PageMeta {
     m.OGImage = url
-    m.OGImageAlt = alt
     return m
 }
 
-func (m *PageMeta) WithCanonical(url string) *PageMeta {
+func (m PageMeta) WithCanonical(url string) PageMeta {
     m.Canonical = url
     return m
 }
 
-func (m *PageMeta) WithSiteName(name string) *PageMeta {
-    m.SiteName = name
-    return m
-}
-
-func (m *PageMeta) AsArticle() *PageMeta {
+func (m PageMeta) AsArticle() PageMeta {
     m.OGType = "article"
     return m
 }
 
-func (m *PageMeta) AsProduct() *PageMeta {
+func (m PageMeta) AsProduct() PageMeta {
     m.OGType = "product"
     return m
 }
 ```
 
-#### 14. internal/database/database.go
+#### 15. internal/meta/context.go
+
+Context helpers to access site config from templates:
+
+```go
+package meta
+
+import (
+    "context"
+
+    "$ARGUMENTS/internal/config"
+    "$ARGUMENTS/internal/ctxkeys"
+)
+
+func SiteFromCtx(ctx context.Context) config.SiteConfig {
+    if cfg, ok := ctx.Value(ctxkeys.SiteConfig).(config.SiteConfig); ok {
+        return cfg
+    }
+    return config.SiteConfig{Name: "$ARGUMENTS"}
+}
+
+func SiteNameFromCtx(ctx context.Context) string {
+    return SiteFromCtx(ctx).Name
+}
+
+func SiteURLFromCtx(ctx context.Context) string {
+    return SiteFromCtx(ctx).URL
+}
+```
+
+#### 16. internal/database/database.go
 
 **For PostgreSQL:**
 
@@ -880,23 +922,28 @@ func (db *DB) Close() {
 }
 ```
 
-#### 14. internal/middleware/middleware.go
+#### 17. internal/middleware/middleware.go
 
 ```go
 package middleware
 
 import (
+    "context"
     "log/slog"
     "time"
+
+    "$ARGUMENTS/internal/config"
+    "$ARGUMENTS/internal/ctxkeys"
 
     "github.com/labstack/echo/v4"
     "github.com/labstack/echo/v4/middleware"
 )
 
-func Setup(e *echo.Echo, isDev bool) {
+func Setup(e *echo.Echo, cfg *config.Config) {
     e.Use(middleware.RequestID())
     e.Use(middleware.Recover())
-    e.Use(requestLogger(isDev))
+    e.Use(SiteConfigMiddleware(cfg.Site))
+    e.Use(requestLogger(cfg.IsDevelopment()))
     e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
         AllowOrigins: []string{"*"},
         AllowMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
@@ -911,6 +958,16 @@ func Setup(e *echo.Echo, isDev bool) {
         HSTSMaxAge:            31536000,
         ContentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline';",
     }))
+}
+
+func SiteConfigMiddleware(site config.SiteConfig) echo.MiddlewareFunc {
+    return func(next echo.HandlerFunc) echo.HandlerFunc {
+        return func(c echo.Context) error {
+            ctx := context.WithValue(c.Request().Context(), ctxkeys.SiteConfig, site)
+            c.SetRequest(c.Request().WithContext(ctx))
+            return next(c)
+        }
+    }
 }
 
 func requestLogger(isDev bool) echo.MiddlewareFunc {
@@ -945,7 +1002,7 @@ func requestLogger(isDev bool) echo.MiddlewareFunc {
 }
 ```
 
-#### 15. internal/handler/handler.go
+#### 18. internal/handler/handler.go
 
 ```go
 package handler
@@ -985,7 +1042,9 @@ func (h *Handler) RegisterRoutes(e *echo.Echo) {
 }
 ```
 
-#### 16. internal/handler/home.go
+#### 19. internal/handler/home.go
+
+Handlers do NOT construct meta - that's the template's job:
 
 ```go
 package handler
@@ -993,7 +1052,6 @@ package handler
 import (
     "net/http"
 
-    "$ARGUMENTS/internal/meta"
     "$ARGUMENTS/templates/pages"
 
     "github.com/labstack/echo/v4"
@@ -1004,62 +1062,46 @@ func (h *Handler) Health(c echo.Context) error {
 }
 
 func (h *Handler) Home(c echo.Context) error {
-    m := meta.New("Home | $ARGUMENTS").
-        WithDescription("Build amazing things with Go, Templ, and HTMX").
-        WithSiteName("$ARGUMENTS")
-
-    return pages.Home(m).Render(c.Request().Context(), c.Response().Writer)
+    return pages.Home().Render(c.Request().Context(), c.Response().Writer)
 }
 ```
 
 ### Template Files
 
-#### 17. templates/layouts/meta.templ
+#### 20. templates/layouts/meta.templ
 
-Meta tags component for SEO and Open Graph:
+Meta tags component - site name comes from context, not the struct:
 
 ```templ
 package layouts
 
-import (
-    "strings"
-    "$ARGUMENTS/internal/meta"
-)
+import "$ARGUMENTS/internal/meta"
 
-templ MetaTags(m *meta.PageMeta) {
-    <title>{ m.Title }</title>
+templ MetaTags(m meta.PageMeta) {
+    <title>{ m.Title } | { meta.SiteNameFromCtx(ctx) }</title>
     if m.Description != "" {
         <meta name="description" content={ m.Description }/>
-    }
-    if len(m.Keywords) > 0 {
-        <meta name="keywords" content={ strings.Join(m.Keywords, ", ") }/>
-    }
-    if m.NoIndex {
-        <meta name="robots" content="noindex, nofollow"/>
     }
     if m.Canonical != "" {
         <link rel="canonical" href={ m.Canonical }/>
     }
+    if m.NoIndex {
+        <meta name="robots" content="noindex, nofollow"/>
+    }
 
-    // Open Graph
+    // Open Graph - site name always from context
     <meta property="og:title" content={ m.Title }/>
+    <meta property="og:site_name" content={ meta.SiteNameFromCtx(ctx) }/>
+    <meta property="og:type" content={ m.OGType }/>
     if m.Description != "" {
         <meta property="og:description" content={ m.Description }/>
     }
-    <meta property="og:type" content={ m.OGType }/>
     if m.OGImage != "" {
         <meta property="og:image" content={ m.OGImage }/>
-        if m.OGImageAlt != "" {
-            <meta property="og:image:alt" content={ m.OGImageAlt }/>
-        }
     }
-    if m.SiteName != "" {
-        <meta property="og:site_name" content={ m.SiteName }/>
-    }
-    <meta property="og:locale" content={ m.Locale }/>
 
     // Twitter Card
-    <meta name="twitter:card" content={ m.TwitterCard }/>
+    <meta name="twitter:card" content="summary_large_image"/>
     <meta name="twitter:title" content={ m.Title }/>
     if m.Description != "" {
         <meta name="twitter:description" content={ m.Description }/>
@@ -1070,14 +1112,16 @@ templ MetaTags(m *meta.PageMeta) {
 }
 ```
 
-#### 18. templates/layouts/base.templ
+#### 21. templates/layouts/base.templ
+
+Base layout receives meta from the page template, not the handler:
 
 ```templ
 package layouts
 
 import "$ARGUMENTS/internal/meta"
 
-templ Base(m *meta.PageMeta) {
+templ Base(m meta.PageMeta) {
     <!DOCTYPE html>
     <html lang="en">
         <head>
@@ -1090,7 +1134,7 @@ templ Base(m *meta.PageMeta) {
         <body class="bg-background text-foreground min-h-screen">
             <header class="border-b border-border">
                 <nav class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-                    <a href="/" class="text-xl font-bold">$ARGUMENTS</a>
+                    <a href="/" class="text-xl font-bold">{ meta.SiteNameFromCtx(ctx) }</a>
                     <div class="flex gap-4">
                         <a href="/" class="hover:text-primary">Home</a>
                     </div>
@@ -1101,7 +1145,7 @@ templ Base(m *meta.PageMeta) {
             </main>
             <footer class="border-t border-border mt-auto">
                 <div class="max-w-7xl mx-auto px-4 py-4 text-center text-muted-foreground">
-                    <p>&copy; 2025 $ARGUMENTS. All rights reserved.</p>
+                    <p>&copy; 2025 { meta.SiteNameFromCtx(ctx) }. All rights reserved.</p>
                 </div>
             </footer>
         </body>
@@ -1109,7 +1153,9 @@ templ Base(m *meta.PageMeta) {
 }
 ```
 
-#### 19. templates/pages/home.templ
+#### 22. templates/pages/home.templ
+
+Template constructs its own meta - handler doesn't pass it:
 
 ```templ
 package pages
@@ -1119,10 +1165,10 @@ import (
     "$ARGUMENTS/templates/layouts"
 )
 
-templ Home(m *meta.PageMeta) {
-    @layouts.Base(m) {
+templ Home() {
+    @layouts.Base(meta.New("Home", "Your Go web application is ready!")) {
         <div class="text-center py-12">
-            <h1 class="text-4xl font-bold mb-4">Welcome to $ARGUMENTS</h1>
+            <h1 class="text-4xl font-bold mb-4">Welcome</h1>
             <p class="text-muted-foreground mb-8">Your Go web application is ready!</p>
             <div class="flex justify-center gap-4">
                 <a href="/health" class="px-6 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90">
@@ -1151,7 +1197,7 @@ templ Home(m *meta.PageMeta) {
 
 ### Static Files
 
-#### 20. static/css/input.css
+#### 23. static/css/input.css
 
 ```css
 @import "tailwindcss";
@@ -1188,7 +1234,7 @@ templ Home(m *meta.PageMeta) {
 }
 ```
 
-#### 21. static/js/.gitkeep
+#### 24. static/js/.gitkeep
 
 Create empty file to preserve directory.
 
@@ -1196,7 +1242,7 @@ Create empty file to preserve directory.
 
 If the user selected Yes for admin dashboard, also create:
 
-#### 22. templates/layouts/admin.templ
+#### 25. templates/layouts/admin.templ
 
 Include the admin layout with:
 
@@ -1207,7 +1253,7 @@ Include the admin layout with:
 
 Reference the patterns from `~/projects/digitaldrywood/creswoodcorners/views/layout/admin.templ`.
 
-#### 23. templates/components/theme/theme.templ
+#### 26. templates/components/theme/theme.templ
 
 Dark/light mode toggle component with:
 
@@ -1217,7 +1263,7 @@ Dark/light mode toggle component with:
 
 Reference `~/projects/digitaldrywood/creswoodcorners/views/components/theme/theme.templ`.
 
-#### 24. templates/components/sidebar/sidebar.templ
+#### 27. templates/components/sidebar/sidebar.templ
 
 Collapsible sidebar with:
 
@@ -1227,7 +1273,7 @@ Collapsible sidebar with:
 
 Reference `~/projects/logans3dcreations/logans3d-v4/components/sidebar/`.
 
-#### 25. templates/pages/admin/dashboard.templ
+#### 28. templates/pages/admin/dashboard.templ
 
 Dashboard page with:
 
@@ -1235,7 +1281,7 @@ Dashboard page with:
 - Quick actions
 - Recent activity
 
-#### 26. internal/handler/admin.go
+#### 29. internal/handler/admin.go
 
 Admin route handlers.
 
@@ -1253,7 +1299,7 @@ Based on the deployment platform selected:
 
 ### Project Documentation
 
-#### 27. CLAUDE.md
+#### 30. CLAUDE.md
 
 Create a CLAUDE.md file with the following content (adjust project name):
 
