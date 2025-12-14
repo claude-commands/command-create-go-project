@@ -249,7 +249,7 @@ export DEFAULT_OG_IMAGE="/static/images/og-default.png"
 
 #### 5. Makefile
 
-Create a comprehensive Makefile based on the pyro.show pattern:
+Create a comprehensive Makefile:
 
 ```makefile
 SHELL := /bin/bash
@@ -1251,8 +1251,6 @@ Include the admin layout with:
 - Theme toggle
 - Mobile responsive design
 
-Reference the patterns from `~/projects/digitaldrywood/creswoodcorners/views/layout/admin.templ`.
-
 #### 26. templates/components/theme/theme.templ
 
 Dark/light mode toggle component with:
@@ -1261,8 +1259,6 @@ Dark/light mode toggle component with:
 - localStorage persistence
 - html.classList toggle
 
-Reference `~/projects/digitaldrywood/creswoodcorners/views/components/theme/theme.templ`.
-
 #### 27. templates/components/sidebar/sidebar.templ
 
 Collapsible sidebar with:
@@ -1270,8 +1266,6 @@ Collapsible sidebar with:
 - Navigation sections
 - Active state detection
 - Mobile sheet integration
-
-Reference `~/projects/logans3dcreations/logans3d-v4/components/sidebar/`.
 
 #### 28. templates/pages/admin/dashboard.templ
 
