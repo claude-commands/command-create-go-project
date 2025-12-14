@@ -126,15 +126,19 @@ Ask the user where they plan to deploy:
 **Plain explanations for beginners:**
 
 - **Vercel**: Completely free for most projects. Connect your GitHub repo and it
-  auto-deploys. 100,000 free requests/month. Your full Go app works via an adapter.
+  auto-deploys. 100,000 free requests/month. **Best paired with Neon PostgreSQL**
+  (also free tier). This is the recommended free hosting stack.
 
 - **Railway**: Like Heroku but modern. Your app runs as a traditional server (same
   as local development). $5/month credit usually covers small projects for free.
+  Good choice for SQLite or if you want a traditional server setup.
 
 - **Fly.io**: Runs your app in multiple locations worldwide for faster access.
-  More setup required (Docker helps) but great for global users.
+  More setup required (Docker helps) but great for global users. Works well with
+  SQLite (persistent volumes) or any database.
 
 - **Self-hosted**: You manage the server yourself. More work but full control.
+  Best for SQLite production deployments.
 
 ---
 
