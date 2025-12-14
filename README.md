@@ -74,7 +74,7 @@ project-name/
 
 ## Requirements
 
-- Go 1.23+
+- Go 1.25+
 - Node.js (for Tailwind CSS)
 - direnv (recommended for environment management)
 

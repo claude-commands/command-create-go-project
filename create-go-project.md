@@ -151,7 +151,7 @@ Create these files in order (dependencies matter):
 ```go
 module $ARGUMENTS
 
-go 1.23
+go 1.25
 
 require (
     github.com/labstack/echo/v4 v4.14.0
