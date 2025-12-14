@@ -697,7 +697,69 @@ func getEnvOrDefault(key, defaultValue string) string {
 }
 ```
 
-#### 13. internal/database/database.go
+#### 13. internal/meta/meta.go
+
+SEO and Open Graph metadata for pages:
+
+```go
+package meta
+
+type PageMeta struct {
+    Title       string
+    Description string
+    Keywords    []string
+    OGType      string
+    OGImage     string
+    OGImageAlt  string
+    TwitterCard string
+    Canonical   string
+    NoIndex     bool
+    SiteName    string
+    Locale      string
+}
+
+func New(title string) *PageMeta {
+    return &PageMeta{
+        Title:       title,
+        OGType:      "website",
+        TwitterCard: "summary_large_image",
+        Locale:      "en_US",
+    }
+}
+
+func (m *PageMeta) WithDescription(desc string) *PageMeta {
+    m.Description = desc
+    return m
+}
+
+func (m *PageMeta) WithOGImage(url, alt string) *PageMeta {
+    m.OGImage = url
+    m.OGImageAlt = alt
+    return m
+}
+
+func (m *PageMeta) WithCanonical(url string) *PageMeta {
+    m.Canonical = url
+    return m
+}
+
+func (m *PageMeta) WithSiteName(name string) *PageMeta {
+    m.SiteName = name
+    return m
+}
+
+func (m *PageMeta) AsArticle() *PageMeta {
+    m.OGType = "article"
+    return m
+}
+
+func (m *PageMeta) AsProduct() *PageMeta {
+    m.OGType = "product"
+    return m
+}
+```
+
+#### 14. internal/database/database.go
 
 **For PostgreSQL:**
 
@@ -931,6 +993,7 @@ package handler
 import (
     "net/http"
 
+    "$ARGUMENTS/internal/meta"
     "$ARGUMENTS/templates/pages"
 
     "github.com/labstack/echo/v4"
@@ -941,24 +1004,86 @@ func (h *Handler) Health(c echo.Context) error {
 }
 
 func (h *Handler) Home(c echo.Context) error {
-    return pages.Home().Render(c.Request().Context(), c.Response().Writer)
+    m := meta.New("Home | $ARGUMENTS").
+        WithDescription("Build amazing things with Go, Templ, and HTMX").
+        WithSiteName("$ARGUMENTS")
+
+    return pages.Home(m).Render(c.Request().Context(), c.Response().Writer)
 }
 ```
 
 ### Template Files
 
-#### 17. templates/layouts/base.templ
+#### 17. templates/layouts/meta.templ
+
+Meta tags component for SEO and Open Graph:
 
 ```templ
 package layouts
 
-templ Base(title string) {
+import (
+    "strings"
+    "$ARGUMENTS/internal/meta"
+)
+
+templ MetaTags(m *meta.PageMeta) {
+    <title>{ m.Title }</title>
+    if m.Description != "" {
+        <meta name="description" content={ m.Description }/>
+    }
+    if len(m.Keywords) > 0 {
+        <meta name="keywords" content={ strings.Join(m.Keywords, ", ") }/>
+    }
+    if m.NoIndex {
+        <meta name="robots" content="noindex, nofollow"/>
+    }
+    if m.Canonical != "" {
+        <link rel="canonical" href={ m.Canonical }/>
+    }
+
+    // Open Graph
+    <meta property="og:title" content={ m.Title }/>
+    if m.Description != "" {
+        <meta property="og:description" content={ m.Description }/>
+    }
+    <meta property="og:type" content={ m.OGType }/>
+    if m.OGImage != "" {
+        <meta property="og:image" content={ m.OGImage }/>
+        if m.OGImageAlt != "" {
+            <meta property="og:image:alt" content={ m.OGImageAlt }/>
+        }
+    }
+    if m.SiteName != "" {
+        <meta property="og:site_name" content={ m.SiteName }/>
+    }
+    <meta property="og:locale" content={ m.Locale }/>
+
+    // Twitter Card
+    <meta name="twitter:card" content={ m.TwitterCard }/>
+    <meta name="twitter:title" content={ m.Title }/>
+    if m.Description != "" {
+        <meta name="twitter:description" content={ m.Description }/>
+    }
+    if m.OGImage != "" {
+        <meta name="twitter:image" content={ m.OGImage }/>
+    }
+}
+```
+
+#### 18. templates/layouts/base.templ
+
+```templ
+package layouts
+
+import "$ARGUMENTS/internal/meta"
+
+templ Base(m *meta.PageMeta) {
     <!DOCTYPE html>
     <html lang="en">
         <head>
             <meta charset="UTF-8"/>
             <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-            <title>{ title } | $ARGUMENTS</title>
+            @MetaTags(m)
             <link rel="stylesheet" href="/static/css/output.css"/>
             <script src="https://unpkg.com/htmx.org@2.0.4"></script>
         </head>
@@ -984,15 +1109,18 @@ templ Base(title string) {
 }
 ```
 
-#### 18. templates/pages/home.templ
+#### 19. templates/pages/home.templ
 
 ```templ
 package pages
 
-import "$ARGUMENTS/templates/layouts"
+import (
+    "$ARGUMENTS/internal/meta"
+    "$ARGUMENTS/templates/layouts"
+)
 
-templ Home() {
-    @layouts.Base("Home") {
+templ Home(m *meta.PageMeta) {
+    @layouts.Base(m) {
         <div class="text-center py-12">
             <h1 class="text-4xl font-bold mb-4">Welcome to $ARGUMENTS</h1>
             <p class="text-muted-foreground mb-8">Your Go web application is ready!</p>
@@ -1023,7 +1151,7 @@ templ Home() {
 
 ### Static Files
 
-#### 19. static/css/input.css
+#### 20. static/css/input.css
 
 ```css
 @import "tailwindcss";
@@ -1060,7 +1188,7 @@ templ Home() {
 }
 ```
 
-#### 20. static/js/.gitkeep
+#### 21. static/js/.gitkeep
 
 Create empty file to preserve directory.
 
@@ -1068,7 +1196,7 @@ Create empty file to preserve directory.
 
 If the user selected Yes for admin dashboard, also create:
 
-#### 21. templates/layouts/admin.templ
+#### 22. templates/layouts/admin.templ
 
 Include the admin layout with:
 
@@ -1079,7 +1207,7 @@ Include the admin layout with:
 
 Reference the patterns from `~/projects/digitaldrywood/creswoodcorners/views/layout/admin.templ`.
 
-#### 22. templates/components/theme/theme.templ
+#### 23. templates/components/theme/theme.templ
 
 Dark/light mode toggle component with:
 
@@ -1089,7 +1217,7 @@ Dark/light mode toggle component with:
 
 Reference `~/projects/digitaldrywood/creswoodcorners/views/components/theme/theme.templ`.
 
-#### 23. templates/components/sidebar/sidebar.templ
+#### 24. templates/components/sidebar/sidebar.templ
 
 Collapsible sidebar with:
 
@@ -1099,7 +1227,7 @@ Collapsible sidebar with:
 
 Reference `~/projects/logans3dcreations/logans3d-v4/components/sidebar/`.
 
-#### 24. templates/pages/admin/dashboard.templ
+#### 25. templates/pages/admin/dashboard.templ
 
 Dashboard page with:
 
@@ -1107,7 +1235,7 @@ Dashboard page with:
 - Quick actions
 - Recent activity
 
-#### 25. internal/handler/admin.go
+#### 26. internal/handler/admin.go
 
 Admin route handlers.
 
@@ -1125,7 +1253,7 @@ Based on the deployment platform selected:
 
 ### Project Documentation
 
-#### 26. CLAUDE.md
+#### 27. CLAUDE.md
 
 Create a CLAUDE.md file with the following content (adjust project name):
 
