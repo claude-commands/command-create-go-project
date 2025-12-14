@@ -216,7 +216,7 @@ static/css/output.css
 export DATABASE_URL="YOUR_DATABASE_URL_HERE"
 
 # Server
-export PORT="8010"
+export PORT="3000"
 export ENV="development"
 export LOG_LEVEL="DEBUG"
 
@@ -362,7 +362,7 @@ tmp_dir = "tmp"
   poll_interval = 0
   post_cmd = []
   pre_cmd = [
-    "lsof -ti:${PORT:-8010} | xargs kill -9 2>/dev/null || true; sleep 0.5",
+    "lsof -ti:${PORT:-3000} | xargs kill -9 2>/dev/null || true; sleep 0.5",
     "templ generate",
     "sqlc generate -f sqlc/sqlc.yaml",
     "go mod tidy"
@@ -669,7 +669,7 @@ type Config struct {
 func Load() *Config {
     cfg := &Config{
         DatabaseURL: os.Getenv("DATABASE_URL"),
-        Port:        getEnvOrDefault("PORT", "8010"),
+        Port:        getEnvOrDefault("PORT", "3000"),
         Env:         getEnvOrDefault("ENV", "development"),
     }
 
@@ -1146,7 +1146,7 @@ The CLAUDE.md should contain:
 **Environment Section:**
 
 - All config via `.envrc` with direnv
-- DATABASE_URL, PORT (default 8010), ENV, LOG_LEVEL
+- DATABASE_URL, PORT (default 3000), ENV, LOG_LEVEL
 
 **Key Commands Table:**
 
@@ -1238,7 +1238,7 @@ After project creation, display a summary to the user showing:
 1. Install tools (first time only): `make setup` and `npm install`
 1. Set up database: Create database, then run `make migrate`
 1. Start developing: `make dev`
-1. Open browser: `http://localhost:8010`
+1. Open browser: `http://localhost:3000`
 
 **Key Commands Table:**
 
