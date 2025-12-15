@@ -1,6 +1,6 @@
 ---
 argument-hint: "<project-name>"
-description: "Create a new Go web project with Templ, HTMX, Tailwind, and sqlc"
+description: "Create a new Go web project with Templ, HTMX, Alpine.js, Tailwind, and sqlc"
 model: claude-opus-4-5-20251101
 allowed-tools: ["Bash", "Read", "Write", "Edit", "Glob", "Grep", "AskUserQuestion"]
 ---
@@ -16,7 +16,8 @@ This command creates a production-ready Go web application with:
 - **Echo v4** - Fast, minimalist web framework
 - **Templ** - Type-safe HTML templates (compiles to Go)
 - **Tailwind CSS v4** - Utility-first CSS framework
-- **HTMX** - Interactive pages without heavy JavaScript
+- **HTMX** - Server-driven interactivity via HTML attributes
+- **Alpine.js** - Client-side interactivity (dropdowns, modals, tabs) without heavy JavaScript
 - **sqlc** - Type-safe database queries from SQL
 - **goose** - Database migrations
 - **Air** - Hot reload for development
@@ -1168,6 +1169,7 @@ templ Base(m meta.PageMeta) {
             @MetaTags(m)
             <link rel="stylesheet" href="/static/css/output.css"/>
             <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+            <script defer src="https://unpkg.com/alpinejs@3.14.8/dist/cdn.min.js"></script>
         </head>
         <body class="bg-background text-foreground min-h-screen">
             <header class="border-b border-border">
@@ -1215,7 +1217,7 @@ templ Home() {
             </div>
         </div>
 
-        <div class="mt-12 grid md:grid-cols-3 gap-6">
+        <div class="mt-12 grid md:grid-cols-2 lg:grid-cols-4 gap-6">
             <div class="p-6 border border-border rounded-lg">
                 <h3 class="font-semibold mb-2">Fast Development</h3>
                 <p class="text-muted-foreground text-sm">Hot reload with Air. Changes appear instantly.</p>
@@ -1227,6 +1229,10 @@ templ Home() {
             <div class="p-6 border border-border rounded-lg">
                 <h3 class="font-semibold mb-2">Modern Styling</h3>
                 <p class="text-muted-foreground text-sm">Tailwind CSS v4 with dark mode support.</p>
+            </div>
+            <div class="p-6 border border-border rounded-lg">
+                <h3 class="font-semibold mb-2">Client Interactivity</h3>
+                <p class="text-muted-foreground text-sm">Alpine.js for dropdowns, modals, and tabs.</p>
             </div>
         </div>
     }
